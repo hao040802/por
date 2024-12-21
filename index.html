@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống quản lý điểm dừng</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script> <!-- Thêm MQTT.js -->
+    <style>
+        /* CSS của bạn */
+    </style>
+</head>
+<body>
+    <header>Hệ thống quản lý điểm dừng</header>
+    <div class="container">
+        <div id="control-panel">
+            <h3>Điều khiển</h3>
+            <label for="modeSelector">Chọn chế độ:</label>
+            <select id="modeSelector">
+                <option value="single">Chọn 1 điểm</option>
+                <option value="multiple">Chọn nhiều điểm</option>
+            </select>
+            <button id="startButton">Bắt đầu</button>
+        </div>
+        <div id="map"></div>
+    </div>
+    <footer>
+        Được thiết kế bởi <a href="#">Nhóm Phát Triển</a> | 2024
+    </footer>
+    <script>
+        // Kết nối đến HiveMQ Broker qua WebSocket
+        const client = mqtt.connect("wss://48296e48195e4fc1a1f0bc944943df86.s1.eu.hivemq.cloud:8884/mqtt", {
+            username: "hivemq.webclient.1734758385824",
+            password: "!K6Y8tMm3:PBwxn7>gW@",
+        });
+
+        const statusElement = document.getElementById("status");
+        const mapElement = document.getElementById("map");
+        var currentMarker;
+        var selectedStops = [];
+        var mode = 'single';
+
+        client.on("connect", () => {
+            console.log("Đã kết nối đến MQTT Broker");
+            client.subscribe("esp32/gps"); // Đăng ký nhận dữ liệu vị trí GPS
+        });
+
+        client.on("message", (topic, message) => {
+            console.log(`Chủ đề: ${topic}, Tin nhắn: ${message.toString()}`);
+            const data = JSON.parse(message.toString());
+            if (data.latitude && data.longitude) {
+                updatePosition(data.latitude, data.longitude);
+            } else {
+                console.error('Dữ liệu GPS không hợp lệ');
+            }
+        });
+
+        client.on("error", (error) => {
+            console.error("Lỗi kết nối:", error);
+        });
+
+        client.on("close", () => {
+            console.log("Mất kết nối đến MQTT Broker");
+        });
+
+        var map = L.map('map', {
+            center: [10.731804, 106.698352],
+            zoom: 18.4,
+            maxBounds: L.latLngBounds(
+                L.latLng(10.730241, 106.697202),
+                L.latLng(10.733403, 106.699948)
+            ),
+            maxZoom: 18.4,
+            minZoom: 18.4,
+            maxBoundsViscosity: 1.0
+        });
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        document.getElementById('modeSelector').onchange = function() {
+            mode = this.value;
+            selectedStops = [];
+            alert("Đã chuyển sang chế độ: " + (mode === 'single' ? "Chọn 1 điểm" : "Chọn nhiều điểm"));
+        };
+
+        document.getElementById('startButton').onclick = function() {
+            if (selectedStops.length > 0) {
+                if (mode === 'multiple') {
+                    sendSelectedStops();
+                } else if (mode === 'single' && selectedStops.length === 1) {
+                    sendStopInfo(selectedStops[0]);
+                }
+            } else {
+                alert("Vui lòng chọn ít nhất một điểm dừng");
+            }
+        };
+
+        function updatePosition(lat, lng) {
+            if (lat && lng) {
+                if (currentMarker) {
+                    map.removeLayer(currentMarker);
+                }
+                currentMarker = L.marker([lat, lng]).addTo(map);
+                currentMarker.bindPopup("<b>Vị trí hiện tại</b><br>Vĩ độ: " + lat + "<br>Kinh độ: " + lng);
+                map.setView([lat, lng], 18.4);
+            } else {
+                console.error('Vĩ độ hoặc kinh độ không hợp lệ');
+            }
+        }
+
+        function addMarker(lat, lng, name) {
+            var marker = L.marker([lat, lng]).addTo(map);
+            marker.bindPopup("<b>" + name + "</b><br>Nhấn để chọn");
+            marker.on('click', function() {
+                if (mode === 'single') {
+                    selectedStops = [name];
+                    alert("Điểm dừng " + name + " đã được chọn");
+                } else if (mode === 'multiple') {
+                    var index = selectedStops.indexOf(name);
+                    if (index === -1) {
+                        selectedStops.push(name);
+                        alert("Điểm dừng " + name + " đã được chọn");
+                    } else {
+                        selectedStops.splice(index, 1);
+                        alert("Điểm dừng " + name + " đã bị loại bỏ");
+                    }
+                }
+            });
+        }
+
+        function sendStopInfo(stopName) {
+            client.publish('bus/stops/single', JSON.stringify({ stop: stopName })); // Gửi dữ liệu điểm dừng đơn lẻ
+        }
+
+        function sendSelectedStops() {
+            client.publish('bus/stops/multiple', JSON.stringify({ stops: selectedStops })); // Gửi dữ liệu nhiều điểm dừng
+            selectedStops = [];
+        }
+
+        addMarker(10.731731, 106.698619, "A");
+        addMarker(10.732349, 106.698599, "B");
+        addMarker(10.731375, 106.698652, "C");
+        addMarker(10.732811, 106.698607, "D");
+        addMarker(10.732866, 106.699545, "E");
+        addMarker(10.730768, 106.698714, "F");
+        addMarker(10.731970, 106.699623, "G");
+        addMarker(10.730805, 106.699786, "H");
+    </script>
+</body>
+</html>
