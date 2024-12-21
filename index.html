@@ -238,11 +238,11 @@
         }
 
         function sendStopInfo(stopName) {
-            client.publish('bus/stops/single', JSON.stringify({ stop: stopName })); // Gửi dữ liệu điểm dừng đơn lẻ
+            client.publish('bus/stops/single', JSON.stringify({stopName})); // Gửi dữ liệu điểm dừng đơn lẻ
         }
 
         function sendSelectedStops() {
-            client.publish('bus/stops/multiple', JSON.stringify({ stops: selectedStops })); // Gửi dữ liệu nhiều điểm dừng
+            client.publish('bus/stops/multiple', JSON.stringify({selectedStops})); // Gửi dữ liệu nhiều điểm dừng
             selectedStops = [];
         }
 
